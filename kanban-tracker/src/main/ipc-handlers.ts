@@ -1,0 +1,357 @@
+import { ipcMain, dialog, shell } from 'electron'
+import { existsSync, mkdirSync } from 'fs'
+import { dirname } from 'path'
+import { DatabaseManager } from './database'
+import { ConfigManager } from './config'
+import type {
+  CreateCardParams,
+  UpdateCardParams,
+  CreateColumnParams,
+  UpdateColumnParams,
+  MoveCardParams,
+  CardFilters,
+  ExportOptions
+} from '../shared/types'
+import * as XLSX from 'xlsx'
+
+interface IpcContext {
+  getDatabaseManager: () => DatabaseManager | null
+  getConfigManager: () => ConfigManager
+  setDatabaseManager: (manager: DatabaseManager) => void
+  startWatcher: (dbPath: string) => void
+  startAutoArchive: () => void
+}
+
+export function setupIpcHandlers(context: IpcContext): void {
+  const { getDatabaseManager, getConfigManager, setDatabaseManager, startWatcher, startAutoArchive } = context
+
+  // Helper to ensure database is connected
+  const withDatabase = <T>(handler: (db: DatabaseManager) => T): T => {
+    const db = getDatabaseManager()
+    if (!db) {
+      throw new Error('Database not connected')
+    }
+    return handler(db)
+  }
+
+  // ============ CONFIG HANDLERS ============
+
+  ipcMain.handle('get-config', () => {
+    return getConfigManager().loadConfig()
+  })
+
+  ipcMain.handle('is-database-connected', () => {
+    return getDatabaseManager() !== null
+  })
+
+  ipcMain.handle('get-database-path', () => {
+    const db = getDatabaseManager()
+    return db ? db.getDbPath() : null
+  })
+
+  ipcMain.handle('create-new-database', async () => {
+    const result = await dialog.showSaveDialog({
+      title: 'Создать новую базу данных',
+      defaultPath: 'kanban.db',
+      filters: [
+        { name: 'SQLite Database', extensions: ['db'] }
+      ],
+      properties: ['createDirectory', 'showOverwriteConfirmation']
+    })
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: 'Cancelled' }
+    }
+
+    const dbPath = result.filePath
+
+    try {
+      // Ensure directory exists
+      const dir = dirname(dbPath)
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true })
+      }
+
+      // Create and initialize database
+      const db = new DatabaseManager(dbPath)
+      db.initialize()
+      setDatabaseManager(db)
+
+      // Save config
+      getConfigManager().saveConfig({ dbPath, isConfigured: true })
+
+      // Start watcher and auto-archive
+      startWatcher(dbPath)
+      startAutoArchive()
+
+      return { success: true, dbPath }
+    } catch (error) {
+      console.error('Failed to create database:', error)
+      return { success: false, error: (error as Error).message }
+    }
+  })
+
+  ipcMain.handle('select-existing-database', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Выбрать существующую базу данных',
+      filters: [
+        { name: 'SQLite Database', extensions: ['db'] }
+      ],
+      properties: ['openFile']
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: 'Cancelled' }
+    }
+
+    const dbPath = result.filePaths[0]
+
+    try {
+      // Validate database
+      if (!DatabaseManager.validateDatabase(dbPath)) {
+        return { success: false, error: 'Выбранный файл не является валидной базой данных' }
+      }
+
+      // Open database
+      const db = new DatabaseManager(dbPath)
+      db.initialize()
+      setDatabaseManager(db)
+
+      // Save config
+      getConfigManager().saveConfig({ dbPath, isConfigured: true })
+
+      // Start watcher and auto-archive
+      startWatcher(dbPath)
+      startAutoArchive()
+
+      return { success: true, dbPath }
+    } catch (error) {
+      console.error('Failed to open database:', error)
+      return { success: false, error: (error as Error).message }
+    }
+  })
+
+  ipcMain.handle('change-database', async () => {
+    // Show dialog with options
+    const choice = await dialog.showMessageBox({
+      type: 'question',
+      title: 'Изменить базу данных',
+      message: 'Что вы хотите сделать?',
+      buttons: ['Создать новую', 'Выбрать существующую', 'Отмена'],
+      defaultId: 2
+    })
+
+    if (choice.response === 0) {
+      return ipcMain.emit('create-new-database')
+    } else if (choice.response === 1) {
+      return ipcMain.emit('select-existing-database')
+    }
+
+    return { success: false, error: 'Cancelled' }
+  })
+
+  // ============ COLUMNS HANDLERS ============
+
+  ipcMain.handle('get-all-columns', () => {
+    return withDatabase(db => db.getAllColumns())
+  })
+
+  ipcMain.handle('create-column', (_, params: CreateColumnParams) => {
+    return withDatabase(db => db.createColumn(params))
+  })
+
+  ipcMain.handle('update-column', (_, params: UpdateColumnParams) => {
+    return withDatabase(db => db.updateColumn(params))
+  })
+
+  ipcMain.handle('delete-column', (_, id: string) => {
+    return withDatabase(db => db.deleteColumn(id))
+  })
+
+  ipcMain.handle('reorder-columns', (_, columnIds: string[]) => {
+    return withDatabase(db => db.reorderColumns(columnIds))
+  })
+
+  // ============ CARDS HANDLERS ============
+
+  ipcMain.handle('get-all-cards', (_, includeArchived?: boolean) => {
+    return withDatabase(db => db.getAllCards(includeArchived))
+  })
+
+  ipcMain.handle('get-archived-cards', (_, filters?: CardFilters) => {
+    return withDatabase(db => db.getArchivedCards(filters))
+  })
+
+  ipcMain.handle('get-card', (_, uid: string) => {
+    return withDatabase(db => db.getCardByUid(uid))
+  })
+
+  ipcMain.handle('create-card', (_, params: CreateCardParams, userName?: string) => {
+    return withDatabase(db => db.createCard(params, userName))
+  })
+
+  ipcMain.handle('update-card', (_, params: UpdateCardParams, userName?: string) => {
+    return withDatabase(db => db.updateCard(params, userName))
+  })
+
+  ipcMain.handle('delete-card', (_, uid: string) => {
+    return withDatabase(db => db.deleteCard(uid))
+  })
+
+  ipcMain.handle('move-card', (_, params: MoveCardParams, userName?: string) => {
+    return withDatabase(db => db.moveCard(params, userName))
+  })
+
+  ipcMain.handle('archive-card', (_, uid: string, userName?: string) => {
+    return withDatabase(db => db.archiveCard(uid, userName))
+  })
+
+  ipcMain.handle('restore-card', (_, uid: string, userName?: string) => {
+    return withDatabase(db => db.restoreCard(uid, userName))
+  })
+
+  // ============ STREAMS HANDLERS ============
+
+  ipcMain.handle('get-all-streams', () => {
+    return withDatabase(db => db.getAllStreams())
+  })
+
+  ipcMain.handle('create-stream', (_, name: string, color?: string) => {
+    return withDatabase(db => db.createStream(name, color))
+  })
+
+  ipcMain.handle('update-stream', (_, id: number, name: string, color?: string) => {
+    return withDatabase(db => db.updateStream(id, name, color))
+  })
+
+  ipcMain.handle('delete-stream', (_, id: number) => {
+    return withDatabase(db => db.deleteStream(id))
+  })
+
+  // ============ ASSIGNEES HANDLERS ============
+
+  ipcMain.handle('get-all-assignees', () => {
+    return withDatabase(db => db.getAllAssignees())
+  })
+
+  ipcMain.handle('create-assignee', (_, name: string, email?: string, position?: string) => {
+    return withDatabase(db => db.createAssignee(name, email, position))
+  })
+
+  ipcMain.handle('update-assignee', (_, id: number, name: string, email?: string, position?: string) => {
+    return withDatabase(db => db.updateAssignee(id, name, email, position))
+  })
+
+  ipcMain.handle('delete-assignee', (_, id: number) => {
+    return withDatabase(db => db.deleteAssignee(id))
+  })
+
+  // ============ CARD STATUSES HANDLERS ============
+
+  ipcMain.handle('get-all-card-statuses', () => {
+    return withDatabase(db => db.getAllCardStatuses())
+  })
+
+  ipcMain.handle('create-card-status', (_, name: string, color?: string) => {
+    return withDatabase(db => db.createCardStatus(name, color))
+  })
+
+  ipcMain.handle('update-card-status', (_, id: number, name: string, color?: string) => {
+    return withDatabase(db => db.updateCardStatus(id, name, color))
+  })
+
+  ipcMain.handle('delete-card-status', (_, id: number) => {
+    return withDatabase(db => db.deleteCardStatus(id))
+  })
+
+  // ============ APP SETTINGS HANDLERS ============
+
+  ipcMain.handle('get-app-settings', () => {
+    return withDatabase(db => db.getAppSettings())
+  })
+
+  ipcMain.handle('update-app-setting', (_, key: string, value: string) => {
+    return withDatabase(db => db.updateAppSetting(key, value))
+  })
+
+  // ============ SYNC HANDLERS ============
+
+  ipcMain.handle('get-sync-metadata', () => {
+    return withDatabase(db => db.getSyncMetadata())
+  })
+
+  // ============ EXPORT HANDLERS ============
+
+  ipcMain.handle('export-data', async (_, options: ExportOptions) => {
+    const db = getDatabaseManager()
+    if (!db) {
+      return { success: false, error: 'Database not connected' }
+    }
+
+    try {
+      const cards = options.includeArchived
+        ? db.getAllCards(true)
+        : db.getAllCards(false)
+
+      // Prepare data for export
+      const exportData = cards.map(card => ({
+        'ID': card.uid,
+        'Стрим': card.stream,
+        'Отдел': card.department,
+        'Ответственные': card.assignees.join(', '),
+        'Дата интервью': card.plannedInterviewDate || '',
+        'Статус': card.actualStatus,
+        'Архивирована': card.isArchived ? 'Да' : 'Нет',
+        'Дата создания': card.createdAt,
+        'Дата обновления': card.updatedAt,
+        'Обновлено': card.updatedBy || ''
+      }))
+
+      // Create workbook
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.json_to_sheet(exportData)
+      XLSX.utils.book_append_sheet(wb, ws, 'Карточки')
+
+      // Show save dialog
+      const result = await dialog.showSaveDialog({
+        title: 'Экспорт данных',
+        defaultPath: `kanban-export-${new Date().toISOString().split('T')[0]}.${options.format}`,
+        filters: [
+          options.format === 'xlsx'
+            ? { name: 'Excel', extensions: ['xlsx'] }
+            : { name: 'CSV', extensions: ['csv'] }
+        ]
+      })
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: 'Cancelled' }
+      }
+
+      // Write file
+      XLSX.writeFile(wb, result.filePath, {
+        bookType: options.format === 'xlsx' ? 'xlsx' : 'csv'
+      })
+
+      return { success: true, filePath: result.filePath }
+    } catch (error) {
+      console.error('Export failed:', error)
+      return { success: false, error: (error as Error).message }
+    }
+  })
+
+  // ============ UTILITY HANDLERS ============
+
+  ipcMain.handle('open-logs-folder', () => {
+    const logsPath = getConfigManager().getLogsPath()
+    shell.openPath(logsPath)
+  })
+
+  ipcMain.handle('show-message-box', async (_, options: Electron.MessageBoxOptions) => {
+    return dialog.showMessageBox(options)
+  })
+
+  ipcMain.handle('reset-config', () => {
+    getConfigManager().resetConfig()
+    return { success: true }
+  })
+}
