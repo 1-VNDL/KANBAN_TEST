@@ -1,0 +1,62 @@
+name: Build Portable EXE
+
+on:
+  push:
+    branches:
+      - claude/build-kanban-app-PwL4E
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: ./kanban-tracker
+        run: npm install
+
+      - name: Build application
+        working-directory: ./kanban-tracker
+        run: npm run build
+
+      - name: Build portable EXE
+        working-directory: ./kanban-tracker
+        run: npm run dist:portable
+
+      - name: Upload portable EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: KanbanTracker-portable
+          path: kanban-tracker/release/*.exe
+          retention-days: 30
+
+      - name: Create Release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/build-kanban-app-PwL4E'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v1.0.0-${{ github.run_number }}
+          name: Kanban Tracker v1.0.0 (Build ${{ github.run_number }})
+          body: |
+            ## Kanban Tracker - Portable Version
+
+            Скачайте файл `KanbanTracker-1.0.0-portable.exe` и запустите его.
+            Установка не требуется!
+
+            ### Первый запуск
+            1. Запустите exe файл
+            2. Выберите "Создать новую БД" или "Выбрать существующую"
+            3. Для совместной работы разместите БД на сетевом диске
+          files: kanban-tracker/release/*.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
