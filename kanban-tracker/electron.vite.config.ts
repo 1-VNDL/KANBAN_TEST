@@ -6,6 +6,7 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     build: {
+      outDir: 'dist/main',
       rollupOptions: {
         external: ['better-sqlite3']
       }
@@ -14,6 +15,7 @@ export default defineConfig({
   preload: {
     plugins: [externalizeDepsPlugin()],
     build: {
+      outDir: 'dist/preload',
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/preload/index.ts')
@@ -24,6 +26,7 @@ export default defineConfig({
   renderer: {
     root: '.',
     build: {
+      outDir: 'dist/renderer',
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'index.html')

@@ -2,6 +2,7 @@
   "name": "kanban-tracker",
   "version": "1.0.0",
   "description": "Electron Kanban Tracker for consulting projects",
+  "author": "Kanban Team",
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -58,7 +59,8 @@
       "output": "release"
     },
     "files": [
-      "dist/**/*"
+      "dist/**/*",
+      "package.json"
     ],
     "win": {
       "target": [
@@ -66,18 +68,11 @@
           "target": "portable",
           "arch": ["x64"]
         }
-      ],
-      "icon": "build/icon.ico"
+      ]
     },
     "portable": {
       "artifactName": "KanbanTracker-${version}-portable.exe",
       "requestExecutionLevel": "user"
-    },
-    "extraResources": [
-      {
-        "from": "resources/",
-        "to": "resources/"
-      }
-    ]
+    }
   }
 }
