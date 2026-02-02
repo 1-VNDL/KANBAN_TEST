@@ -1,7 +1,7 @@
 import { app } from 'electron'
-import { join, dirname } from 'path'
+import { join, dirname, basename } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import type { LocalConfig } from '../shared/types'
+import type { LocalConfig, RecentDatabase, LocalBoard } from '../shared/types'
 
 export class ConfigManager {
   private configPath: string
@@ -56,7 +56,9 @@ export class ConfigManager {
     }
     return {
       dbPath: '',
-      isConfigured: false
+      isConfigured: false,
+      recentDatabases: [],
+      boards: []
     }
   }
 
@@ -72,10 +74,120 @@ export class ConfigManager {
     }
   }
 
+  addRecentDatabase(dbPath: string, customName?: string): void {
+    const config = this.loadConfig()
+    const recentDatabases = config.recentDatabases || []
+
+    // Remove if already exists
+    const filtered = recentDatabases.filter(db => db.path !== dbPath)
+
+    // Add to beginning
+    const newEntry: RecentDatabase = {
+      path: dbPath,
+      name: customName || basename(dbPath, '.db'),
+      lastOpenedAt: new Date().toISOString()
+    }
+
+    // Keep only last 3
+    const updated = [newEntry, ...filtered].slice(0, 3)
+
+    this.saveConfig({
+      ...config,
+      recentDatabases: updated
+    })
+  }
+
+  getRecentDatabases(): RecentDatabase[] {
+    const config = this.loadConfig()
+    return (config.recentDatabases || []).filter(db => existsSync(db.path))
+  }
+
+  removeRecentDatabase(dbPath: string): void {
+    const config = this.loadConfig()
+    const recentDatabases = (config.recentDatabases || []).filter(db => db.path !== dbPath)
+    this.saveConfig({
+      ...config,
+      recentDatabases
+    })
+  }
+
+  // Board management methods
+  getBoards(): LocalBoard[] {
+    const config = this.loadConfig()
+    return config.boards || []
+  }
+
+  addBoard(dbPath: string, displayName: string): LocalBoard {
+    const config = this.loadConfig()
+    const boards = config.boards || []
+
+    // Check if board with this dbPath already exists
+    const existing = boards.find(b => b.dbPath === dbPath)
+    if (existing) {
+      return existing
+    }
+
+    const newBoard: LocalBoard = {
+      id: crypto.randomUUID(),
+      dbPath,
+      displayName,
+      createdAt: new Date().toISOString()
+    }
+
+    this.saveConfig({
+      ...config,
+      boards: [...boards, newBoard],
+      currentBoardId: newBoard.id
+    })
+
+    return newBoard
+  }
+
+  updateBoard(boardId: string, displayName: string): void {
+    const config = this.loadConfig()
+    const boards = (config.boards || []).map(b =>
+      b.id === boardId ? { ...b, displayName } : b
+    )
+    this.saveConfig({
+      ...config,
+      boards
+    })
+  }
+
+  deleteBoard(boardId: string): void {
+    const config = this.loadConfig()
+    const boards = (config.boards || []).filter(b => b.id !== boardId)
+    const currentBoardId = config.currentBoardId === boardId
+      ? boards[0]?.id
+      : config.currentBoardId
+
+    this.saveConfig({
+      ...config,
+      boards,
+      currentBoardId
+    })
+  }
+
+  getCurrentBoard(): LocalBoard | null {
+    const config = this.loadConfig()
+    const boards = config.boards || []
+    return boards.find(b => b.id === config.currentBoardId) || boards[0] || null
+  }
+
+  setCurrentBoard(boardId: string): void {
+    const config = this.loadConfig()
+    this.saveConfig({
+      ...config,
+      currentBoardId: boardId
+    })
+  }
+
   resetConfig(): void {
     this.saveConfig({
       dbPath: '',
-      isConfigured: false
+      isConfigured: false,
+      recentDatabases: [],
+      boards: []
     })
   }
 }

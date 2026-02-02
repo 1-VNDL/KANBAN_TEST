@@ -77,8 +77,11 @@ export function setupIpcHandlers(context: IpcContext): void {
       db.initialize()
       setDatabaseManager(db)
 
-      // Save config
-      getConfigManager().saveConfig({ dbPath, isConfigured: true })
+      // Save config and add to recent databases
+      const configManager = getConfigManager()
+      configManager.saveConfig({ ...configManager.loadConfig(), dbPath, isConfigured: true })
+      configManager.addRecentDatabase(dbPath)
+      configManager.addBoard(dbPath, 'Канбан-доска')
 
       // Start watcher and auto-archive
       startWatcher(dbPath)
@@ -117,8 +120,11 @@ export function setupIpcHandlers(context: IpcContext): void {
       db.initialize()
       setDatabaseManager(db)
 
-      // Save config
-      getConfigManager().saveConfig({ dbPath, isConfigured: true })
+      // Save config and add to recent databases
+      const configManager = getConfigManager()
+      configManager.saveConfig({ ...configManager.loadConfig(), dbPath, isConfigured: true })
+      configManager.addRecentDatabase(dbPath)
+      configManager.addBoard(dbPath, 'Канбан-доска')
 
       // Start watcher and auto-archive
       startWatcher(dbPath)
@@ -129,6 +135,49 @@ export function setupIpcHandlers(context: IpcContext): void {
       console.error('Failed to open database:', error)
       return { success: false, error: (error as Error).message }
     }
+  })
+
+  ipcMain.handle('open-recent-database', async (_, dbPath: string) => {
+    try {
+      // Validate database still exists and is valid
+      if (!existsSync(dbPath)) {
+        // Remove from recent if file no longer exists
+        getConfigManager().removeRecentDatabase(dbPath)
+        return { success: false, error: 'Файл базы данных не найден' }
+      }
+
+      if (!DatabaseManager.validateDatabase(dbPath)) {
+        return { success: false, error: 'Выбранный файл не является валидной базой данных' }
+      }
+
+      // Open database
+      const db = new DatabaseManager(dbPath)
+      db.initialize()
+      setDatabaseManager(db)
+
+      // Update config and recent databases
+      const configManager = getConfigManager()
+      configManager.saveConfig({ ...configManager.loadConfig(), dbPath, isConfigured: true })
+      configManager.addRecentDatabase(dbPath) // This updates lastOpenedAt
+
+      // Start watcher and auto-archive
+      startWatcher(dbPath)
+      startAutoArchive()
+
+      return { success: true, dbPath }
+    } catch (error) {
+      console.error('Failed to open recent database:', error)
+      return { success: false, error: (error as Error).message }
+    }
+  })
+
+  ipcMain.handle('get-recent-databases', () => {
+    return getConfigManager().getRecentDatabases()
+  })
+
+  ipcMain.handle('remove-recent-database', (_, dbPath: string) => {
+    getConfigManager().removeRecentDatabase(dbPath)
+    return { success: true }
   })
 
   ipcMain.handle('change-database', async () => {
@@ -353,5 +402,69 @@ export function setupIpcHandlers(context: IpcContext): void {
   ipcMain.handle('reset-config', () => {
     getConfigManager().resetConfig()
     return { success: true }
+  })
+
+  // ============ BOARD MANAGEMENT HANDLERS ============
+
+  ipcMain.handle('get-boards', () => {
+    return getConfigManager().getBoards()
+  })
+
+  ipcMain.handle('get-current-board', () => {
+    return getConfigManager().getCurrentBoard()
+  })
+
+  ipcMain.handle('add-board', (_, dbPath: string, displayName: string) => {
+    const board = getConfigManager().addBoard(dbPath, displayName)
+    return { success: true, board }
+  })
+
+  ipcMain.handle('update-board', (_, boardId: string, displayName: string) => {
+    getConfigManager().updateBoard(boardId, displayName)
+    return { success: true }
+  })
+
+  ipcMain.handle('delete-board', (_, boardId: string) => {
+    getConfigManager().deleteBoard(boardId)
+    return { success: true }
+  })
+
+  ipcMain.handle('switch-board', async (_, boardId: string) => {
+    const configManager = getConfigManager()
+    const boards = configManager.getBoards()
+    const board = boards.find(b => b.id === boardId)
+
+    if (!board) {
+      return { success: false, error: 'Доска не найдена' }
+    }
+
+    try {
+      // Validate database still exists
+      if (!existsSync(board.dbPath)) {
+        return { success: false, error: 'Файл базы данных не найден' }
+      }
+
+      if (!DatabaseManager.validateDatabase(board.dbPath)) {
+        return { success: false, error: 'База данных повреждена' }
+      }
+
+      // Open new database
+      const db = new DatabaseManager(board.dbPath)
+      db.initialize()
+      setDatabaseManager(db)
+
+      // Update current board
+      configManager.setCurrentBoard(boardId)
+      configManager.saveConfig({ ...configManager.loadConfig(), dbPath: board.dbPath, isConfigured: true })
+
+      // Start watcher and auto-archive
+      startWatcher(board.dbPath)
+      startAutoArchive()
+
+      return { success: true, board }
+    } catch (error) {
+      console.error('Failed to switch board:', error)
+      return { success: false, error: (error as Error).message }
+    }
   })
 }

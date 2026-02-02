@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { LayoutDashboard, Settings, Archive, Cog, Database, User, Search, Download, RefreshCw } from 'lucide-react'
 import { useKanbanStore } from '../../stores/kanbanStore'
 import { Button } from '../UI'
+import { BoardSelector } from './BoardSelector'
 
 export function Layout() {
   const { isDatabaseConnected, appSettings, searchQuery, setSearchQuery, fetchAllData } = useKanbanStore()
@@ -119,7 +120,12 @@ export function Layout() {
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header */}
         <header className="h-16 border-b border-border flex items-center justify-between px-6 bg-card gap-4">
-          <h2 className="text-xl font-semibold text-card-foreground flex-shrink-0">{getPageTitle()}</h2>
+          {/* Board selector on board page, regular title on other pages */}
+          {isOnBoard ? (
+            <BoardSelector onBoardChange={fetchAllData} />
+          ) : (
+            <h2 className="text-xl font-semibold text-card-foreground flex-shrink-0">{getPageTitle()}</h2>
+          )}
 
           {/* Search and actions - only on board page */}
           {isOnBoard && (

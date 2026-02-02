@@ -60,11 +60,29 @@ export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
 }
 
+// Recent database entry
+export interface RecentDatabase {
+  path: string;
+  name: string; // User-friendly name
+  lastOpenedAt: string;
+}
+
+// Board entry (local, per-user)
+export interface LocalBoard {
+  id: string;
+  dbPath: string;
+  displayName: string; // User's custom name for the board
+  createdAt: string;
+}
+
 // Local Configuration
 export interface LocalConfig {
   dbPath: string;
   isConfigured: boolean;
   lastUserName?: string;
+  recentDatabases?: RecentDatabase[];
+  boards?: LocalBoard[];
+  currentBoardId?: string;
 }
 
 // Sync Metadata

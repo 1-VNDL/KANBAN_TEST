@@ -3,7 +3,7 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { format, parseISO, differenceInDays, differenceInMinutes } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { Pencil, Clock, Archive } from 'lucide-react'
+import { Clock, Archive } from 'lucide-react'
 import { useKanbanStore } from '../../stores/kanbanStore'
 import type { Card } from '../../../shared/types'
 
@@ -73,15 +73,23 @@ export function KanbanCard({ card, onClick, isDragging, isInClosedColumn }: Kanb
     return () => clearInterval(interval)
   }, [card.autoArchiveScheduledAt])
 
+  const handleClick = (e: React.MouseEvent) => {
+    // Prevent click from interfering with drag
+    if (!isSortableDragging) {
+      onClick?.()
+    }
+  }
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
+      onClick={handleClick}
       className={`group bg-background rounded-lg border border-border shadow-sm
-                 hover:shadow-md hover:border-primary/50 transition-all cursor-grab active:cursor-grabbing
-                 ${isDragging || isSortableDragging ? 'shadow-xl scale-105 rotate-2' : ''}`}
+                 hover:shadow-md hover:border-primary/50 transition-all cursor-pointer
+                 ${isDragging || isSortableDragging ? 'shadow-xl scale-105 rotate-2 cursor-grabbing' : ''}`}
     >
       {/* Color stripe */}
       <div
@@ -90,7 +98,7 @@ export function KanbanCard({ card, onClick, isDragging, isInClosedColumn }: Kanb
       />
 
       <div className="p-3">
-        {/* Header */}
+        {/* Header with ID and archive indicator */}
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-mono text-muted-foreground">
             ID {card.uid.slice(0, 8)}
@@ -105,77 +113,34 @@ export function KanbanCard({ card, onClick, isDragging, isInClosedColumn }: Kanb
             {isInClosedColumn && (
               <Archive className="w-4 h-4 text-muted-foreground" />
             )}
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onClick?.()
-              }}
-              className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-accent transition-all"
-            >
-              <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-            </button>
           </div>
         </div>
 
-        {/* Stream */}
+        {/* Department - PRIMARY (bold, prominent) */}
         <div className="mb-2">
-          <span className="text-xs text-muted-foreground">Стрим:</span>
-          <p className="text-sm font-medium text-card-foreground truncate">{card.stream}</p>
+          <p className="text-sm font-semibold text-card-foreground truncate">{card.department}</p>
         </div>
 
-        {/* Department */}
-        <div className="mb-2">
-          <span className="text-xs text-muted-foreground">Отдел/управление:</span>
-          <p className="text-sm text-card-foreground truncate">{card.department}</p>
-        </div>
-
-        {/* Assignees */}
-        {card.assignees.length > 0 && (
-          <div className="mb-2">
-            <span className="text-xs text-muted-foreground">Ответственные:</span>
-            <div className="flex flex-wrap gap-1 mt-1">
-              {card.assignees.map((assignee) => (
-                <span
-                  key={assignee}
-                  className="inline-block px-2 py-0.5 bg-accent text-accent-foreground text-xs rounded"
-                >
-                  {assignee}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Planned date */}
+        {/* Interview Date */}
         {card.plannedInterviewDate && (
           <div className="mb-2">
-            <span className="text-xs text-muted-foreground">Дата интервью:</span>
-            <p className={`text-sm ${isDateSoon ? 'text-destructive font-medium' : 'text-card-foreground'}`}>
+            <p className={`text-sm ${isDateSoon ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
               {format(parseISO(card.plannedInterviewDate), 'dd.MM.yyyy', { locale: ru })}
             </p>
           </div>
         )}
 
         {/* Status */}
-        <div className="mb-2">
-          <span className="text-xs text-muted-foreground">Статус:</span>
-          <div className="mt-1">
-            <span
-              className="inline-block px-2 py-0.5 text-xs rounded font-medium"
-              style={{
-                backgroundColor: statusColor,
-                color: statusColor === '#E5E7EB' ? '#374151' : '#1F2937'
-              }}
-            >
-              {card.actualStatus}
-            </span>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="pt-2 mt-2 border-t border-border text-xs text-muted-foreground">
-          Обновлено: {format(parseISO(card.updatedAt), 'dd.MM.yyyy HH:mm', { locale: ru })}
-          {card.updatedBy && ` • ${card.updatedBy}`}
+        <div>
+          <span
+            className="inline-block px-2 py-0.5 text-xs rounded font-medium"
+            style={{
+              backgroundColor: statusColor,
+              color: statusColor === '#E5E7EB' ? '#374151' : '#1F2937'
+            }}
+          >
+            {card.actualStatus}
+          </span>
         </div>
       </div>
     </div>
