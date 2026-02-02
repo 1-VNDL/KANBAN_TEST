@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Check, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, Check, X, Upload, Info } from 'lucide-react'
 import { useKanbanStore } from '../../stores/kanbanStore'
 import { Button, Input, ColorPicker } from '../UI'
 import { ConfirmDialog } from '../Modals/ConfirmDialog'
@@ -8,16 +8,56 @@ import { ConfirmDialog } from '../Modals/ConfirmDialog'
 export function SettingsPage() {
   return (
     <div className="h-full overflow-auto p-6 space-y-8">
+      {/* Info banner */}
+      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
+        <div className="flex gap-3">
+          <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-1">
+              Настройки проекта (общие для всех участников)
+            </h4>
+            <p className="text-sm text-blue-700 dark:text-blue-400">
+              Все изменения в списках сохраняются в базу данных и автоматически синхронизируются между участниками проекта.
+              Достаточно настроить один раз — остальные участники увидят эти же значения.
+            </p>
+          </div>
+        </div>
+      </div>
+
       <StreamsSection />
       <AssigneesSection />
       <StatusesSection />
+
+      {/* Import instructions */}
+      <section className="p-4 bg-muted rounded-xl">
+        <h4 className="font-medium text-card-foreground mb-2">Инструкция по импорту из Excel/CSV</h4>
+        <p className="text-sm text-muted-foreground mb-3">
+          Для импорта списка подготовьте файл Excel (.xlsx) или CSV со следующей структурой:
+        </p>
+        <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1 mb-3">
+          <li>Первая колонка должна содержать названия (имена, статусы и т.д.)</li>
+          <li>Первая строка может быть заголовком (будет пропущена, если это "name" или "название")</li>
+          <li>Каждое значение должно быть в отдельной строке</li>
+          <li>Дубликаты будут автоматически пропущены</li>
+        </ul>
+        <p className="text-sm text-muted-foreground">
+          Пример содержимого файла:
+        </p>
+        <pre className="mt-2 p-3 bg-background rounded border border-border text-xs font-mono">
+{`Название
+Маркетинг
+Финансы
+HR
+IT`}
+        </pre>
+      </section>
     </div>
   )
 }
 
 // Streams Section
 function StreamsSection() {
-  const { streams, createStream, updateStream, deleteStream } = useKanbanStore()
+  const { streams, createStream, updateStream, deleteStream, fetchAllData } = useKanbanStore()
   const [newName, setNewName] = useState('')
   const [newColor, setNewColor] = useState<string | undefined>()
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -25,6 +65,7 @@ function StreamsSection() {
   const [editColor, setEditColor] = useState<string | undefined>()
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [isImporting, setIsImporting] = useState(false)
 
   const handleCreate = async () => {
     if (!newName.trim()) return
@@ -60,6 +101,29 @@ function StreamsSection() {
     }
   }
 
+  const handleImport = async () => {
+    setIsImporting(true)
+    try {
+      const result = await window.electron.invoke('import-list-from-file', 'streams') as {
+        success: boolean
+        imported?: number
+        skipped?: number
+        error?: string
+      }
+
+      if (result.success) {
+        toast.success(`Импортировано: ${result.imported}, пропущено: ${result.skipped}`)
+        await fetchAllData()
+      } else if (result.error && result.error !== 'Cancelled') {
+        toast.error(result.error)
+      }
+    } catch {
+      toast.error('Ошибка импорта')
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
   const startEdit = (stream: typeof streams[0]) => {
     setEditingId(stream.id)
     setEditName(stream.name)
@@ -68,7 +132,13 @@ function StreamsSection() {
 
   return (
     <section>
-      <h3 className="text-lg font-semibold text-foreground mb-4">Стримы</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-foreground">Стримы</h3>
+        <Button variant="outline" size="sm" onClick={handleImport} isLoading={isImporting}>
+          <Upload className="w-4 h-4 mr-1.5" />
+          Импорт из файла
+        </Button>
+      </div>
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         <table className="w-full">
           <thead>
@@ -167,7 +237,7 @@ function StreamsSection() {
 
 // Assignees Section
 function AssigneesSection() {
-  const { assignees, createAssignee, updateAssignee, deleteAssignee } = useKanbanStore()
+  const { assignees, createAssignee, updateAssignee, deleteAssignee, fetchAllData } = useKanbanStore()
   const [newName, setNewName] = useState('')
   const [newEmail, setNewEmail] = useState('')
   const [newPosition, setNewPosition] = useState('')
@@ -177,6 +247,7 @@ function AssigneesSection() {
   const [editPosition, setEditPosition] = useState('')
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [isImporting, setIsImporting] = useState(false)
 
   const handleCreate = async () => {
     if (!newName.trim()) return
@@ -213,6 +284,29 @@ function AssigneesSection() {
     }
   }
 
+  const handleImport = async () => {
+    setIsImporting(true)
+    try {
+      const result = await window.electron.invoke('import-list-from-file', 'assignees') as {
+        success: boolean
+        imported?: number
+        skipped?: number
+        error?: string
+      }
+
+      if (result.success) {
+        toast.success(`Импортировано: ${result.imported}, пропущено: ${result.skipped}`)
+        await fetchAllData()
+      } else if (result.error && result.error !== 'Cancelled') {
+        toast.error(result.error)
+      }
+    } catch {
+      toast.error('Ошибка импорта')
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
   const startEdit = (assignee: typeof assignees[0]) => {
     setEditingId(assignee.id)
     setEditName(assignee.name)
@@ -222,7 +316,13 @@ function AssigneesSection() {
 
   return (
     <section>
-      <h3 className="text-lg font-semibold text-foreground mb-4">Ответственные</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-foreground">Ответственные</h3>
+        <Button variant="outline" size="sm" onClick={handleImport} isLoading={isImporting}>
+          <Upload className="w-4 h-4 mr-1.5" />
+          Импорт из файла
+        </Button>
+      </div>
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         <table className="w-full">
           <thead>
@@ -317,7 +417,7 @@ function AssigneesSection() {
 
 // Statuses Section
 function StatusesSection() {
-  const { cardStatuses, createCardStatus, updateCardStatus, deleteCardStatus } = useKanbanStore()
+  const { cardStatuses, createCardStatus, updateCardStatus, deleteCardStatus, fetchAllData } = useKanbanStore()
   const [newName, setNewName] = useState('')
   const [newColor, setNewColor] = useState<string | undefined>()
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -325,6 +425,7 @@ function StatusesSection() {
   const [editColor, setEditColor] = useState<string | undefined>()
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [isImporting, setIsImporting] = useState(false)
 
   const handleCreate = async () => {
     if (!newName.trim()) return
@@ -360,6 +461,29 @@ function StatusesSection() {
     }
   }
 
+  const handleImport = async () => {
+    setIsImporting(true)
+    try {
+      const result = await window.electron.invoke('import-list-from-file', 'statuses') as {
+        success: boolean
+        imported?: number
+        skipped?: number
+        error?: string
+      }
+
+      if (result.success) {
+        toast.success(`Импортировано: ${result.imported}, пропущено: ${result.skipped}`)
+        await fetchAllData()
+      } else if (result.error && result.error !== 'Cancelled') {
+        toast.error(result.error)
+      }
+    } catch {
+      toast.error('Ошибка импорта')
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
   const startEdit = (status: typeof cardStatuses[0]) => {
     setEditingId(status.id)
     setEditName(status.name)
@@ -368,7 +492,13 @@ function StatusesSection() {
 
   return (
     <section>
-      <h3 className="text-lg font-semibold text-foreground mb-4">Фактические статусы</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-foreground">Фактические статусы</h3>
+        <Button variant="outline" size="sm" onClick={handleImport} isLoading={isImporting}>
+          <Upload className="w-4 h-4 mr-1.5" />
+          Импорт из файла
+        </Button>
+      </div>
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         <table className="w-full">
           <thead>

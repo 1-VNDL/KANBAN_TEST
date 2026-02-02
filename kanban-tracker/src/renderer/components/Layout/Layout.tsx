@@ -1,13 +1,14 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { LayoutDashboard, Settings, Archive, Cog, Database, User, Search, Download, RefreshCw } from 'lucide-react'
 import { useKanbanStore } from '../../stores/kanbanStore'
 import { Button } from '../UI'
 import { BoardSelector } from './BoardSelector'
+import { FilterPanel } from '../KanbanBoard/FilterPanel'
 
 export function Layout() {
-  const { isDatabaseConnected, appSettings, searchQuery, setSearchQuery, fetchAllData } = useKanbanStore()
+  const { isDatabaseConnected, appSettings, searchQuery, setSearchQuery, fetchAllData, boardFilters, setBoardFilters } = useKanbanStore()
   const location = useLocation()
   const [isExporting, setIsExporting] = useState(false)
 
@@ -54,6 +55,19 @@ export function Layout() {
   }
 
   const isOnBoard = location.pathname === '/'
+
+  // Calculate active filters count
+  const activeFiltersCount = useMemo(() => {
+    let count = 0
+    if (boardFilters.stream) count++
+    if (boardFilters.department) count++
+    if (boardFilters.assignee) count++
+    if (boardFilters.status) count++
+    if (boardFilters.column) count++
+    if (boardFilters.dateFrom) count++
+    if (boardFilters.dateTo) count++
+    return count
+  }, [boardFilters])
 
   return (
     <div className="flex h-screen bg-background">
@@ -143,7 +157,14 @@ export function Layout() {
                 />
               </div>
 
-              {/* Export dropdown */}
+              {/* Filter panel */}
+              <FilterPanel
+                filters={boardFilters}
+                onFiltersChange={setBoardFilters}
+                activeFiltersCount={activeFiltersCount}
+              />
+
+              {/* Export and refresh */}
               <div className="flex gap-2">
                 <Button
                   variant="outline"

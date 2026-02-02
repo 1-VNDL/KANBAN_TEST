@@ -11,7 +11,9 @@ import type {
   CreateColumnParams,
   UpdateColumnParams,
   MoveCardParams,
-  CardFilters
+  CardFilters,
+  CustomAttributeDefinition,
+  BoardFilters
 } from '../../shared/types'
 
 interface KanbanState {
@@ -22,6 +24,7 @@ interface KanbanState {
   streams: Stream[]
   assignees: Assignee[]
   cardStatuses: CardStatus[]
+  customAttributeDefinitions: CustomAttributeDefinition[]
   appSettings: AppSettings | null
 
   // UI State
@@ -29,12 +32,15 @@ interface KanbanState {
   isDatabaseConnected: boolean
   searchQuery: string
   filters: CardFilters
+  boardFilters: BoardFilters
 
   // Actions
   setLoading: (loading: boolean) => void
   setDatabaseConnected: (connected: boolean) => void
   setSearchQuery: (query: string) => void
   setFilters: (filters: CardFilters) => void
+  setBoardFilters: (filters: BoardFilters) => void
+  clearBoardFilters: () => void
 
   // Data actions
   fetchAllData: () => Promise<void>
@@ -74,6 +80,21 @@ interface KanbanState {
   // Settings actions
   updateAppSetting: (key: string, value: string) => Promise<void>
   refreshSettings: () => Promise<void>
+
+  // Custom attribute actions
+  refreshCustomAttributeDefinitions: () => Promise<void>
+  createCustomAttributeDefinition: (name: string, type: string) => Promise<CustomAttributeDefinition>
+  deleteCustomAttributeDefinition: (id: number) => Promise<boolean>
+}
+
+const emptyBoardFilters: BoardFilters = {
+  stream: null,
+  department: null,
+  assignee: null,
+  status: null,
+  dateFrom: null,
+  dateTo: null,
+  column: null
 }
 
 export const useKanbanStore = create<KanbanState>((set, get) => ({
@@ -84,28 +105,33 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
   streams: [],
   assignees: [],
   cardStatuses: [],
+  customAttributeDefinitions: [],
   appSettings: null,
   isLoading: false,
   isDatabaseConnected: false,
   searchQuery: '',
   filters: {},
+  boardFilters: { ...emptyBoardFilters },
 
   // UI actions
   setLoading: (loading) => set({ isLoading: loading }),
   setDatabaseConnected: (connected) => set({ isDatabaseConnected: connected }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setFilters: (filters) => set({ filters }),
+  setBoardFilters: (boardFilters) => set({ boardFilters }),
+  clearBoardFilters: () => set({ boardFilters: { ...emptyBoardFilters } }),
 
   // Fetch all data
   fetchAllData: async () => {
     set({ isLoading: true })
     try {
-      const [columns, cards, streams, assignees, cardStatuses, appSettings] = await Promise.all([
+      const [columns, cards, streams, assignees, cardStatuses, customAttributeDefinitions, appSettings] = await Promise.all([
         window.electron.invoke('get-all-columns') as Promise<Column[]>,
         window.electron.invoke('get-all-cards') as Promise<Card[]>,
         window.electron.invoke('get-all-streams') as Promise<Stream[]>,
         window.electron.invoke('get-all-assignees') as Promise<Assignee[]>,
         window.electron.invoke('get-all-card-statuses') as Promise<CardStatus[]>,
+        window.electron.invoke('get-all-custom-attribute-definitions') as Promise<CustomAttributeDefinition[]>,
         window.electron.invoke('get-app-settings') as Promise<AppSettings>
       ])
 
@@ -115,6 +141,7 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
         streams,
         assignees,
         cardStatuses,
+        customAttributeDefinitions,
         appSettings,
         isDatabaseConnected: true
       })
@@ -304,5 +331,27 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     } catch (error) {
       console.error('Failed to refresh settings:', error)
     }
+  },
+
+  // Custom attribute actions
+  refreshCustomAttributeDefinitions: async () => {
+    try {
+      const customAttributeDefinitions = await window.electron.invoke('get-all-custom-attribute-definitions') as CustomAttributeDefinition[]
+      set({ customAttributeDefinitions })
+    } catch (error) {
+      console.error('Failed to refresh custom attributes:', error)
+    }
+  },
+
+  createCustomAttributeDefinition: async (name, type) => {
+    const attr = await window.electron.invoke('create-custom-attribute-definition', name, type) as CustomAttributeDefinition
+    await get().refreshCustomAttributeDefinitions()
+    return attr
+  },
+
+  deleteCustomAttributeDefinition: async (id) => {
+    await window.electron.invoke('delete-custom-attribute-definition', id)
+    await get().refreshCustomAttributeDefinitions()
+    return true
   }
 }))

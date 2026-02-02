@@ -98,26 +98,21 @@ export function KanbanCard({ card, onClick, isDragging, isInClosedColumn }: Kanb
       />
 
       <div className="p-3">
-        {/* Header with ID and archive indicator */}
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-mono text-muted-foreground">
-            ID {card.uid.slice(0, 8)}
-          </span>
-          <div className="flex items-center gap-1">
-            {isInClosedColumn && countdown && (
+        {/* Archive indicator (only in closed column) */}
+        {isInClosedColumn && (
+          <div className="flex items-center justify-end gap-1 mb-2">
+            {countdown && (
               <span className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
                 <Clock className="w-3 h-3" />
                 {countdown}
               </span>
             )}
-            {isInClosedColumn && (
-              <Archive className="w-4 h-4 text-muted-foreground" />
-            )}
+            <Archive className="w-4 h-4 text-muted-foreground" />
           </div>
-        </div>
+        )}
 
         {/* Department - PRIMARY (bold, prominent) */}
-        <div className="mb-2">
+        <div className={isInClosedColumn ? '' : 'mb-2'}>
           <p className="text-sm font-semibold text-card-foreground truncate">{card.department}</p>
         </div>
 

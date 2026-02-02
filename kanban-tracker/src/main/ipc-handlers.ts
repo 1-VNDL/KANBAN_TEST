@@ -467,4 +467,115 @@ export function setupIpcHandlers(context: IpcContext): void {
       return { success: false, error: (error as Error).message }
     }
   })
+
+  // ============ CUSTOM ATTRIBUTES HANDLERS ============
+
+  ipcMain.handle('get-all-custom-attribute-definitions', () => {
+    return withDatabase(db => db.getAllCustomAttributeDefinitions())
+  })
+
+  ipcMain.handle('create-custom-attribute-definition', (_, name: string, type: string) => {
+    return withDatabase(db => db.createCustomAttributeDefinition(name, type as 'text' | 'number' | 'date' | 'boolean'))
+  })
+
+  ipcMain.handle('update-custom-attribute-definition', (_, id: number, name: string) => {
+    return withDatabase(db => db.updateCustomAttributeDefinition(id, name))
+  })
+
+  ipcMain.handle('delete-custom-attribute-definition', (_, id: number) => {
+    return withDatabase(db => db.deleteCustomAttributeDefinition(id))
+  })
+
+  ipcMain.handle('get-card-custom-attributes', (_, cardUid: string) => {
+    return withDatabase(db => db.getCardCustomAttributes(cardUid))
+  })
+
+  ipcMain.handle('set-card-custom-attribute', (_, cardUid: string, attributeId: number, value: string | null) => {
+    return withDatabase(db => {
+      db.setCardCustomAttribute(cardUid, attributeId, value)
+      return { success: true }
+    })
+  })
+
+  ipcMain.handle('remove-card-custom-attribute', (_, cardUid: string, attributeId: number) => {
+    return withDatabase(db => {
+      db.removeCardCustomAttribute(cardUid, attributeId)
+      return { success: true }
+    })
+  })
+
+  // ============ FILTERING DATA HANDLERS ============
+
+  ipcMain.handle('get-all-departments', () => {
+    return withDatabase(db => db.getAllDepartments())
+  })
+
+  // ============ IMPORT HANDLERS ============
+
+  ipcMain.handle('import-list-from-file', async (_, listType: 'streams' | 'assignees' | 'statuses') => {
+    const result = await dialog.showOpenDialog({
+      title: 'Импортировать список из файла',
+      filters: [
+        { name: 'Excel/CSV', extensions: ['xlsx', 'xls', 'csv'] }
+      ],
+      properties: ['openFile']
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: 'Cancelled' }
+    }
+
+    try {
+      const filePath = result.filePaths[0]
+      const workbook = XLSX.readFile(filePath)
+      const sheetName = workbook.SheetNames[0]
+      const sheet = workbook.Sheets[sheetName]
+      const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as string[][]
+
+      // Extract values from first column (skip header if present)
+      const values: string[] = []
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i]
+        if (row && row[0]) {
+          const val = String(row[0]).trim()
+          if (val && val.toLowerCase() !== 'name' && val.toLowerCase() !== 'название') {
+            values.push(val)
+          }
+        }
+      }
+
+      if (values.length === 0) {
+        return { success: false, error: 'Файл не содержит данных' }
+      }
+
+      const db = getDatabaseManager()
+      if (!db) {
+        return { success: false, error: 'База данных не подключена' }
+      }
+
+      let importResult: { imported: number; skipped: number }
+      switch (listType) {
+        case 'streams':
+          importResult = db.importStreams(values)
+          break
+        case 'assignees':
+          importResult = db.importAssignees(values)
+          break
+        case 'statuses':
+          importResult = db.importCardStatuses(values)
+          break
+        default:
+          return { success: false, error: 'Неизвестный тип списка' }
+      }
+
+      return {
+        success: true,
+        imported: importResult.imported,
+        skipped: importResult.skipped
+      }
+    } catch (error) {
+      console.error('Import failed:', error)
+      return { success: false, error: (error as Error).message }
+    }
+  })
 }

@@ -13,7 +13,10 @@ import type {
   UpdateColumnParams,
   MoveCardParams,
   SyncMetadata,
-  CardFilters
+  CardFilters,
+  CustomAttributeDefinition,
+  CardCustomAttribute,
+  CustomAttributeType
 } from '../shared/types'
 
 export class DatabaseManager {
@@ -140,6 +143,30 @@ export class DatabaseManager {
       )
     `)
 
+    // Custom attribute definitions table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS custom_attribute_definitions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        type TEXT NOT NULL CHECK(type IN ('text', 'number', 'date', 'boolean')),
+        created_at TEXT NOT NULL
+      )
+    `)
+
+    // Card custom attributes values table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS card_custom_attributes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        card_uid TEXT NOT NULL,
+        attribute_id INTEGER NOT NULL,
+        value TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (card_uid) REFERENCES cards(uid) ON DELETE CASCADE,
+        FOREIGN KEY (attribute_id) REFERENCES custom_attribute_definitions(id) ON DELETE CASCADE,
+        UNIQUE(card_uid, attribute_id)
+      )
+    `)
+
     // Create indexes
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_cards_column ON cards(column_id, position);
@@ -147,6 +174,8 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_cards_auto_archive ON cards(auto_archive_scheduled_at);
       CREATE INDEX IF NOT EXISTS idx_columns_position ON columns(position);
       CREATE INDEX IF NOT EXISTS idx_card_assignees_card ON card_assignees(card_uid);
+      CREATE INDEX IF NOT EXISTS idx_card_custom_attrs_card ON card_custom_attributes(card_uid);
+      CREATE INDEX IF NOT EXISTS idx_card_custom_attrs_attr ON card_custom_attributes(attribute_id);
     `)
   }
 
@@ -374,7 +403,8 @@ export class DatabaseManager {
     return rows.map(card => ({
       ...card,
       isArchived: Boolean(card.isArchived),
-      assignees: this.getCardAssignees(card.uid)
+      assignees: this.getCardAssignees(card.uid),
+      customAttributes: this.getCardCustomAttributes(card.uid)
     }))
   }
 
@@ -413,7 +443,8 @@ export class DatabaseManager {
     return rows.map(card => ({
       ...card,
       isArchived: Boolean(card.isArchived),
-      assignees: this.getCardAssignees(card.uid)
+      assignees: this.getCardAssignees(card.uid),
+      customAttributes: this.getCardCustomAttributes(card.uid)
     }))
   }
 
@@ -582,7 +613,8 @@ export class DatabaseManager {
     return {
       ...row,
       isArchived: Boolean(row.isArchived),
-      assignees: this.getCardAssignees(uid)
+      assignees: this.getCardAssignees(uid),
+      customAttributes: this.getCardCustomAttributes(uid)
     }
   }
 
@@ -672,7 +704,8 @@ export class DatabaseManager {
     return rows.map(card => ({
       ...card,
       isArchived: Boolean(card.isArchived),
-      assignees: this.getCardAssignees(card.uid)
+      assignees: this.getCardAssignees(card.uid),
+      customAttributes: this.getCardCustomAttributes(card.uid)
     }))
   }
 
@@ -888,5 +921,172 @@ export class DatabaseManager {
 
   getDbPath(): string {
     return this.dbPath
+  }
+
+  // CUSTOM ATTRIBUTE DEFINITIONS CRUD
+
+  getAllCustomAttributeDefinitions(): CustomAttributeDefinition[] {
+    return this.db.prepare(`
+      SELECT id, name, type, created_at as createdAt
+      FROM custom_attribute_definitions ORDER BY name ASC
+    `).all() as CustomAttributeDefinition[]
+  }
+
+  createCustomAttributeDefinition(name: string, type: CustomAttributeType): CustomAttributeDefinition {
+    const now = new Date().toISOString()
+    const result = this.db.prepare(`
+      INSERT INTO custom_attribute_definitions (name, type, created_at) VALUES (?, ?, ?)
+    `).run(name, type, now)
+
+    this.updateSyncMetadata()
+
+    return {
+      id: result.lastInsertRowid as number,
+      name,
+      type,
+      createdAt: now
+    }
+  }
+
+  updateCustomAttributeDefinition(id: number, name: string): CustomAttributeDefinition {
+    this.db.prepare('UPDATE custom_attribute_definitions SET name = ? WHERE id = ?').run(name, id)
+    this.updateSyncMetadata()
+    return this.db.prepare(
+      'SELECT id, name, type, created_at as createdAt FROM custom_attribute_definitions WHERE id = ?'
+    ).get(id) as CustomAttributeDefinition
+  }
+
+  deleteCustomAttributeDefinition(id: number): boolean {
+    // Delete all card values for this attribute
+    this.db.prepare('DELETE FROM card_custom_attributes WHERE attribute_id = ?').run(id)
+    // Delete the definition
+    this.db.prepare('DELETE FROM custom_attribute_definitions WHERE id = ?').run(id)
+    this.updateSyncMetadata()
+    return true
+  }
+
+  // CARD CUSTOM ATTRIBUTES CRUD
+
+  getCardCustomAttributes(cardUid: string): CardCustomAttribute[] {
+    return this.db.prepare(`
+      SELECT cca.attribute_id as attributeId, cad.name as attributeName,
+             cad.type as attributeType, cca.value
+      FROM card_custom_attributes cca
+      JOIN custom_attribute_definitions cad ON cca.attribute_id = cad.id
+      WHERE cca.card_uid = ?
+    `).all(cardUid) as CardCustomAttribute[]
+  }
+
+  setCardCustomAttribute(cardUid: string, attributeId: number, value: string | null): void {
+    const now = new Date().toISOString()
+    this.db.prepare(`
+      INSERT OR REPLACE INTO card_custom_attributes (card_uid, attribute_id, value, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(cardUid, attributeId, value, now)
+    this.updateSyncMetadata()
+  }
+
+  removeCardCustomAttribute(cardUid: string, attributeId: number): void {
+    this.db.prepare('DELETE FROM card_custom_attributes WHERE card_uid = ? AND attribute_id = ?')
+      .run(cardUid, attributeId)
+    this.updateSyncMetadata()
+  }
+
+  // Get all unique departments for filtering
+  getAllDepartments(): string[] {
+    const rows = this.db.prepare(`
+      SELECT DISTINCT department FROM cards WHERE is_archived = 0 ORDER BY department ASC
+    `).all() as { department: string }[]
+    return rows.map(r => r.department)
+  }
+
+  // Bulk import for streams (CSV/Excel)
+  importStreams(names: string[]): { imported: number; skipped: number } {
+    const now = new Date().toISOString()
+    const insertStmt = this.db.prepare(`
+      INSERT OR IGNORE INTO streams (name, created_at) VALUES (?, ?)
+    `)
+
+    let imported = 0
+    let skipped = 0
+
+    const transaction = this.db.transaction(() => {
+      for (const name of names) {
+        const trimmed = name.trim()
+        if (trimmed) {
+          const result = insertStmt.run(trimmed, now)
+          if (result.changes > 0) {
+            imported++
+          } else {
+            skipped++
+          }
+        }
+      }
+    })
+
+    transaction()
+    this.updateSyncMetadata()
+
+    return { imported, skipped }
+  }
+
+  // Bulk import for assignees
+  importAssignees(names: string[]): { imported: number; skipped: number } {
+    const now = new Date().toISOString()
+    const insertStmt = this.db.prepare(`
+      INSERT OR IGNORE INTO assignees (name, created_at) VALUES (?, ?)
+    `)
+
+    let imported = 0
+    let skipped = 0
+
+    const transaction = this.db.transaction(() => {
+      for (const name of names) {
+        const trimmed = name.trim()
+        if (trimmed) {
+          const result = insertStmt.run(trimmed, now)
+          if (result.changes > 0) {
+            imported++
+          } else {
+            skipped++
+          }
+        }
+      }
+    })
+
+    transaction()
+    this.updateSyncMetadata()
+
+    return { imported, skipped }
+  }
+
+  // Bulk import for card statuses
+  importCardStatuses(names: string[]): { imported: number; skipped: number } {
+    const now = new Date().toISOString()
+    const insertStmt = this.db.prepare(`
+      INSERT OR IGNORE INTO card_statuses (name, created_at) VALUES (?, ?)
+    `)
+
+    let imported = 0
+    let skipped = 0
+
+    const transaction = this.db.transaction(() => {
+      for (const name of names) {
+        const trimmed = name.trim()
+        if (trimmed) {
+          const result = insertStmt.run(trimmed, now)
+          if (result.changes > 0) {
+            imported++
+          } else {
+            skipped++
+          }
+        }
+      }
+    })
+
+    transaction()
+    this.updateSyncMetadata()
+
+    return { imported, skipped }
   }
 }

@@ -1,3 +1,22 @@
+// Custom attribute types
+export type CustomAttributeType = 'text' | 'number' | 'date' | 'boolean';
+
+// Custom attribute definition (shared in DB)
+export interface CustomAttributeDefinition {
+  id: number;
+  name: string;
+  type: CustomAttributeType;
+  createdAt: string;
+}
+
+// Custom attribute value for a card
+export interface CardCustomAttribute {
+  attributeId: number;
+  attributeName: string;
+  attributeType: CustomAttributeType;
+  value: string | null;
+}
+
 // Card entity
 export interface Card {
   uid: string;
@@ -15,6 +34,7 @@ export interface Card {
   isArchived: boolean;
   archivedAt?: string;
   autoArchiveScheduledAt?: string;
+  customAttributes?: CardCustomAttribute[];
 }
 
 // Column entity
@@ -154,10 +174,24 @@ export enum StartupMode {
 export interface CardFilters {
   search?: string;
   streams?: string[];
+  departments?: string[];
   assignees?: string[];
   statuses?: string[];
   dateFrom?: string;
   dateTo?: string;
+  columns?: string[];
+  customAttributes?: { attributeId: number; value: string }[];
+}
+
+// Board filter state (for UI)
+export interface BoardFilters {
+  stream: string | null;
+  department: string | null;
+  assignee: string | null;
+  status: string | null;
+  dateFrom: string | null;
+  dateTo: string | null;
+  column: string | null;
 }
 
 // Export options

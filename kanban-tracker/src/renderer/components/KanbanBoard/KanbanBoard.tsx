@@ -26,7 +26,7 @@ import { EditCardModal } from '../Modals/EditCardModal'
 import type { Card, Column } from '../../../shared/types'
 
 export function KanbanBoard() {
-  const { columns, cards, searchQuery, moveCard, reorderColumns } = useKanbanStore()
+  const { columns, cards, searchQuery, boardFilters, moveCard, reorderColumns } = useKanbanStore()
 
   const [activeCard, setActiveCard] = useState<Card | null>(null)
   const [activeColumn, setActiveColumn] = useState<Column | null>(null)
@@ -43,19 +43,51 @@ export function KanbanBoard() {
     useSensor(KeyboardSensor)
   )
 
-  // Filter cards based on search query
+  // Filter cards based on search query and board filters
   const filteredCards = useMemo(() => {
-    if (!searchQuery) return cards
+    let filtered = cards
 
-    const query = searchQuery.toLowerCase()
-    return cards.filter(card =>
-      card.stream.toLowerCase().includes(query) ||
-      card.department.toLowerCase().includes(query) ||
-      card.assignees.some(a => a.toLowerCase().includes(query)) ||
-      card.actualStatus.toLowerCase().includes(query) ||
-      card.uid.toLowerCase().includes(query)
-    )
-  }, [cards, searchQuery])
+    // Apply search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(card =>
+        card.stream.toLowerCase().includes(query) ||
+        card.department.toLowerCase().includes(query) ||
+        card.assignees.some(a => a.toLowerCase().includes(query)) ||
+        card.actualStatus.toLowerCase().includes(query) ||
+        card.uid.toLowerCase().includes(query)
+      )
+    }
+
+    // Apply board filters
+    if (boardFilters.stream) {
+      filtered = filtered.filter(card => card.stream === boardFilters.stream)
+    }
+    if (boardFilters.department) {
+      filtered = filtered.filter(card => card.department === boardFilters.department)
+    }
+    if (boardFilters.assignee) {
+      filtered = filtered.filter(card => card.assignees.includes(boardFilters.assignee!))
+    }
+    if (boardFilters.status) {
+      filtered = filtered.filter(card => card.actualStatus === boardFilters.status)
+    }
+    if (boardFilters.column) {
+      filtered = filtered.filter(card => card.columnId === boardFilters.column)
+    }
+    if (boardFilters.dateFrom) {
+      filtered = filtered.filter(card =>
+        card.plannedInterviewDate && card.plannedInterviewDate >= boardFilters.dateFrom!
+      )
+    }
+    if (boardFilters.dateTo) {
+      filtered = filtered.filter(card =>
+        card.plannedInterviewDate && card.plannedInterviewDate <= boardFilters.dateTo!
+      )
+    }
+
+    return filtered
+  }, [cards, searchQuery, boardFilters])
 
   // Group cards by column
   const cardsByColumn = useMemo(() => {
