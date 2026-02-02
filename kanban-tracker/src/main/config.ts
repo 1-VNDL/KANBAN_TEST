@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { join, dirname, basename } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { randomUUID } from 'crypto'
 import type { LocalConfig, RecentDatabase, LocalBoard } from '../shared/types'
 
 export class ConfigManager {
@@ -128,7 +129,7 @@ export class ConfigManager {
     }
 
     const newBoard: LocalBoard = {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       dbPath,
       displayName,
       createdAt: new Date().toISOString()
