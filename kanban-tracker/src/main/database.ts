@@ -25,7 +25,8 @@ export class DatabaseManager {
 
   constructor(dbPath: string) {
     this.dbPath = dbPath
-    this.db = new Database(dbPath, { timeout: 5000 })
+    // Increase timeout for better multi-user support
+    this.db = new Database(dbPath, { timeout: 30000 })
   }
 
   initialize(): void {
@@ -33,8 +34,13 @@ export class DatabaseManager {
     this.db.pragma('journal_mode = WAL')
     this.db.pragma('synchronous = NORMAL')
     this.db.pragma('cache_size = -64000')
-    this.db.pragma('busy_timeout = 5000')
+    // Increase busy_timeout for multi-user access (30 seconds)
+    this.db.pragma('busy_timeout = 30000')
     this.db.pragma('foreign_keys = ON')
+    // Use NORMAL locking mode (not EXCLUSIVE) for multi-process access
+    this.db.pragma('locking_mode = NORMAL')
+    // Limit WAL file size and checkpoint more frequently
+    this.db.pragma('wal_autocheckpoint = 100')
 
     // Create tables
     this.createTables()

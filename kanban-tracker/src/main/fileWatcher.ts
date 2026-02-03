@@ -33,8 +33,8 @@ export class DatabaseWatcher {
     })
 
     this.watcher.on('change', (path) => {
-      // Only respond to main db file changes
-      if (!path.endsWith('.db')) return
+      // Respond to main db file OR WAL file changes (WAL contains uncommitted changes)
+      if (!path.endsWith('.db') && !path.endsWith('-wal')) return
 
       // Debounce to avoid multiple updates
       if (this.debounceTimeout) {
@@ -43,11 +43,22 @@ export class DatabaseWatcher {
 
       this.debounceTimeout = setTimeout(() => {
         try {
+          // Check main db file mtime
           const currentMtime = statSync(this.dbPath).mtimeMs
 
+          // Also check WAL file mtime if it exists
+          let walMtime = 0
+          try {
+            walMtime = statSync(`${this.dbPath}-wal`).mtimeMs
+          } catch {
+            // WAL file might not exist, that's ok
+          }
+
+          const maxMtime = Math.max(currentMtime, walMtime)
+
           // Check if file actually changed
-          if (currentMtime > this.lastKnownMtime) {
-            this.lastKnownMtime = currentMtime
+          if (maxMtime > this.lastKnownMtime) {
+            this.lastKnownMtime = maxMtime
             this.onChangeCallback()
           }
         } catch (error) {

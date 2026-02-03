@@ -67,8 +67,8 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
           </button>
         </div>
 
-        {/* Body */}
-        <div className="px-6 py-4 max-h-[calc(100vh-200px)] overflow-y-auto">
+        {/* Body - scrollable container */}
+        <div className="px-6 py-4 max-h-[calc(100vh-140px)] overflow-y-auto">
           {children}
         </div>
       </div>

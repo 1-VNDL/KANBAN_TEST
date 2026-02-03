@@ -40,8 +40,8 @@ export function KanbanCard({ card, onClick, isDragging, isInClosedColumn }: Kanb
   const status = cardStatuses.find(s => s.name === card.actualStatus)
   const statusColor = status?.color || '#E5E7EB'
 
-  // Check if date is soon (within 3 days)
-  const isDateSoon = card.plannedInterviewDate
+  // Check if date is soon (within 3 days) - but not in closed column
+  const isDateSoon = card.plannedInterviewDate && !isInClosedColumn
     ? differenceInDays(parseISO(card.plannedInterviewDate), new Date()) <= 3
     : false
 
