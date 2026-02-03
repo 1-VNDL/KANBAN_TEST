@@ -14,38 +14,16 @@ export class ConfigManager {
   }
 
   private determineDataPath(): string {
-    // Try portable mode first (data folder next to exe)
-    const exePath = app.getPath('exe')
-    const exeDir = dirname(exePath)
-    const portableDataPath = join(exeDir, 'KanbanTracker_Data')
-
-    // Check if we're running from a typical "portable" location
-    // Avoid creating data folder in system directories
-    const isSystemPath = exeDir.includes('Windows') ||
-                         exeDir.includes('Program Files') ||
-                         exeDir.includes('/usr') ||
-                         exeDir.includes('/bin')
-
-    if (!isSystemPath) {
-      try {
-        if (!existsSync(portableDataPath)) {
-          mkdirSync(portableDataPath, { recursive: true })
-        }
-        // Test write permissions
-        const testFile = join(portableDataPath, '.test')
-        writeFileSync(testFile, 'test')
-        const fs = require('fs')
-        fs.unlinkSync(testFile)
-        console.log('Using portable data path:', portableDataPath)
-        return portableDataPath
-      } catch (err) {
-        console.log('Portable data path failed, using userData:', err)
-      }
-    }
-
-    // Fallback to userData directory
+    // Always use userData for consistent config storage
+    // This ensures userId, recentDatabases, etc. persist across sessions
+    // The database file itself can be anywhere (network drive, portable folder)
     const userDataPath = app.getPath('userData')
     console.log('Using userData path:', userDataPath)
+
+    if (!existsSync(userDataPath)) {
+      mkdirSync(userDataPath, { recursive: true })
+    }
+
     return userDataPath
   }
 

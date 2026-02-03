@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import toast from 'react-hot-toast'
-import { ChevronDown, Plus, Pencil, Trash2, Check, X } from 'lucide-react'
+import { ChevronDown, Plus, Pencil, Trash2, Check, X, FolderOpen } from 'lucide-react'
 import { ConfirmDialog } from '../Modals/ConfirmDialog'
 import type { LocalBoard } from '../../../shared/types'
 
@@ -98,6 +98,24 @@ export function BoardSelector({ onBoardChange }: BoardSelectorProps) {
       await loadBoards()
       onBoardChange()
       toast.success('Новая доска создана')
+    }
+  }
+
+  const handleConnectToBoard = async () => {
+    setIsOpen(false)
+
+    // This will show the dialog to select existing database
+    const result = await window.electron.invoke('select-existing-database') as {
+      success: boolean
+      error?: string
+    }
+
+    if (result.success) {
+      await loadBoards()
+      onBoardChange()
+      toast.success('Подключено к доске')
+    } else if (result.error && result.error !== 'Cancelled') {
+      toast.error(result.error)
     }
   }
 
@@ -237,6 +255,15 @@ export function BoardSelector({ onBoardChange }: BoardSelectorProps) {
 
                 {/* Divider */}
                 <div className="my-1 border-t border-border" />
+
+                {/* Connect to existing board */}
+                <button
+                  onClick={handleConnectToBoard}
+                  className="w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 hover:bg-accent transition-colors text-green-600"
+                >
+                  <FolderOpen className="w-4 h-4" />
+                  Подключиться к доске
+                </button>
 
                 {/* Create new board */}
                 <button
