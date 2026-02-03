@@ -16,22 +16,37 @@ export class ConfigManager {
   private determineDataPath(): string {
     // Try portable mode first (data folder next to exe)
     const exePath = app.getPath('exe')
-    const portableDataPath = join(dirname(exePath), 'KanbanTracker_Data')
+    const exeDir = dirname(exePath)
+    const portableDataPath = join(exeDir, 'KanbanTracker_Data')
 
-    try {
-      if (!existsSync(portableDataPath)) {
-        mkdirSync(portableDataPath, { recursive: true })
+    // Check if we're running from a typical "portable" location
+    // Avoid creating data folder in system directories
+    const isSystemPath = exeDir.includes('Windows') ||
+                         exeDir.includes('Program Files') ||
+                         exeDir.includes('/usr') ||
+                         exeDir.includes('/bin')
+
+    if (!isSystemPath) {
+      try {
+        if (!existsSync(portableDataPath)) {
+          mkdirSync(portableDataPath, { recursive: true })
+        }
+        // Test write permissions
+        const testFile = join(portableDataPath, '.test')
+        writeFileSync(testFile, 'test')
+        const fs = require('fs')
+        fs.unlinkSync(testFile)
+        console.log('Using portable data path:', portableDataPath)
+        return portableDataPath
+      } catch (err) {
+        console.log('Portable data path failed, using userData:', err)
       }
-      // Test write permissions
-      const testFile = join(portableDataPath, '.test')
-      writeFileSync(testFile, 'test')
-      const fs = require('fs')
-      fs.unlinkSync(testFile)
-      return portableDataPath
-    } catch {
-      // Fallback to userData directory
-      return app.getPath('userData')
     }
+
+    // Fallback to userData directory
+    const userDataPath = app.getPath('userData')
+    console.log('Using userData path:', userDataPath)
+    return userDataPath
   }
 
   getDataPath(): string {
@@ -184,11 +199,43 @@ export class ConfigManager {
   }
 
   resetConfig(): void {
+    const config = this.loadConfig()
     this.saveConfig({
       dbPath: '',
       isConfigured: false,
       recentDatabases: [],
-      boards: []
+      boards: [],
+      userId: config.userId // Keep the userId across resets
+    })
+  }
+
+  // Get or generate a unique user ID
+  getUserId(): string {
+    const config = this.loadConfig()
+    if (config.userId) {
+      return config.userId
+    }
+
+    // Generate new user ID
+    const userId = randomUUID()
+    this.saveConfig({
+      ...config,
+      userId
+    })
+    return userId
+  }
+
+  // Get last user name (for display purposes)
+  getLastUserName(): string | undefined {
+    return this.loadConfig().lastUserName
+  }
+
+  // Set last user name
+  setLastUserName(name: string): void {
+    const config = this.loadConfig()
+    this.saveConfig({
+      ...config,
+      lastUserName: name
     })
   }
 }

@@ -6,7 +6,7 @@ import { Button, Input } from '../UI'
 import { ConfirmDialog } from '../Modals/ConfirmDialog'
 
 export function AppSettingsPage() {
-  const { appSettings, updateAppSetting, refreshSettings } = useKanbanStore()
+  const { appSettings, updateAppSetting, refreshSettings, fetchAllData } = useKanbanStore()
   const [dbPath, setDbPath] = useState<string>('')
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false)
 
@@ -49,7 +49,21 @@ export function AppSettingsPage() {
   const handleSaveUserName = async () => {
     if (!userName.trim()) return
     try {
+      // Get user ID and update assignee record
+      const userId = await window.electron.invoke('get-user-id') as string
+      const result = await window.electron.invoke('update-user-name', userId, userName.trim()) as { success: boolean }
+
+      if (!result.success) {
+        toast.error('Имя уже используется другим пользователем')
+        return
+      }
+
+      // Update app setting
       await updateAppSetting('current_user_name', userName.trim())
+
+      // Refresh all data to reflect the name change in assignees list
+      await fetchAllData()
+
       toast.success('Имя пользователя сохранено')
     } catch {
       toast.error('Не удалось сохранить настройку')

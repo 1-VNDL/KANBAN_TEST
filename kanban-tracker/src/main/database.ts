@@ -80,9 +80,17 @@ export class DatabaseManager {
         name TEXT NOT NULL UNIQUE,
         email TEXT,
         position TEXT,
+        user_id TEXT,
         created_at TEXT NOT NULL
       )
     `)
+
+    // Add user_id column if it doesn't exist (migration for existing databases)
+    try {
+      this.db.exec(`ALTER TABLE assignees ADD COLUMN user_id TEXT`)
+    } catch {
+      // Column already exists, ignore
+    }
 
     // Card statuses table
     this.db.exec(`
@@ -813,6 +821,89 @@ export class DatabaseManager {
     this.db.prepare('DELETE FROM assignees WHERE id = ?').run(id)
     this.updateSyncMetadata()
     return { success: true }
+  }
+
+  // Register or find user by their unique ID
+  registerUser(userId: string, defaultName?: string): Assignee {
+    // Check if user already exists
+    const existing = this.db.prepare(
+      'SELECT id, name, email, position, user_id as userId, created_at as createdAt FROM assignees WHERE user_id = ?'
+    ).get(userId) as (Assignee & { userId: string }) | undefined
+
+    if (existing) {
+      return existing
+    }
+
+    // Create new user with temporary name
+    const now = new Date().toISOString()
+    const tempName = defaultName || `Пользователь ${userId.slice(0, 8)}`
+
+    // Make sure name is unique
+    let finalName = tempName
+    let counter = 1
+    while (this.db.prepare('SELECT id FROM assignees WHERE name = ?').get(finalName)) {
+      finalName = `${tempName} (${counter})`
+      counter++
+    }
+
+    const result = this.db.prepare(`
+      INSERT INTO assignees (name, user_id, created_at) VALUES (?, ?, ?)
+    `).run(finalName, userId, now)
+
+    this.updateSyncMetadata()
+
+    return {
+      id: result.lastInsertRowid as number,
+      name: finalName,
+      createdAt: now
+    }
+  }
+
+  // Update user name by userId and also update the assignee record
+  updateUserName(userId: string, newName: string): { success: boolean; assignee?: Assignee } {
+    // Find assignee by userId
+    const existing = this.db.prepare(
+      'SELECT id, name FROM assignees WHERE user_id = ?'
+    ).get(userId) as { id: number; name: string } | undefined
+
+    if (!existing) {
+      return { success: false }
+    }
+
+    // Check if new name is taken by another user
+    const nameTaken = this.db.prepare(
+      'SELECT id FROM assignees WHERE name = ? AND id != ?'
+    ).get(newName, existing.id)
+
+    if (nameTaken) {
+      return { success: false }
+    }
+
+    const oldName = existing.name
+
+    // Update assignee name
+    this.db.prepare('UPDATE assignees SET name = ? WHERE id = ?').run(newName, existing.id)
+
+    // Update card_assignees
+    this.db.prepare('UPDATE card_assignees SET assignee_name = ? WHERE assignee_name = ?')
+      .run(newName, oldName)
+
+    this.updateSyncMetadata()
+
+    const assignee = this.db.prepare(
+      'SELECT id, name, email, position, created_at as createdAt FROM assignees WHERE id = ?'
+    ).get(existing.id) as Assignee
+
+    return { success: true, assignee }
+  }
+
+  // Get assignee by userId
+  getAssigneeByUserId(userId: string): Assignee | null {
+    const result = this.db.prepare(
+      'SELECT id, name, email, position, user_id as userId, created_at as createdAt FROM assignees WHERE user_id = ?'
+    ).get(userId) as Assignee | undefined
+
+    return result || null
   }
 
   // CARD STATUSES CRUD

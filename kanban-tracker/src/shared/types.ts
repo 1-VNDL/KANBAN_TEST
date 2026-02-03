@@ -100,6 +100,7 @@ export interface LocalConfig {
   dbPath: string;
   isConfigured: boolean;
   lastUserName?: string;
+  userId?: string; // Unique user ID for auto-registration
   recentDatabases?: RecentDatabase[];
   boards?: LocalBoard[];
   currentBoardId?: string;

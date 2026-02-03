@@ -40,6 +40,10 @@ export function setupIpcHandlers(context: IpcContext): void {
     return getConfigManager().loadConfig()
   })
 
+  ipcMain.handle('get-user-id', () => {
+    return getConfigManager().getUserId()
+  })
+
   ipcMain.handle('is-database-connected', () => {
     return getDatabaseManager() !== null
   })
@@ -82,6 +86,11 @@ export function setupIpcHandlers(context: IpcContext): void {
       configManager.saveConfig({ ...configManager.loadConfig(), dbPath, isConfigured: true })
       configManager.addRecentDatabase(dbPath)
       configManager.addBoard(dbPath, 'Канбан-доска')
+
+      // Register user as assignee
+      const userId = configManager.getUserId()
+      const lastUserName = configManager.getLastUserName()
+      db.registerUser(userId, lastUserName)
 
       // Start watcher and auto-archive
       startWatcher(dbPath)
@@ -126,6 +135,11 @@ export function setupIpcHandlers(context: IpcContext): void {
       configManager.addRecentDatabase(dbPath)
       configManager.addBoard(dbPath, 'Канбан-доска')
 
+      // Register user as assignee
+      const userId = configManager.getUserId()
+      const lastUserName = configManager.getLastUserName()
+      db.registerUser(userId, lastUserName)
+
       // Start watcher and auto-archive
       startWatcher(dbPath)
       startAutoArchive()
@@ -159,6 +173,11 @@ export function setupIpcHandlers(context: IpcContext): void {
       const configManager = getConfigManager()
       configManager.saveConfig({ ...configManager.loadConfig(), dbPath, isConfigured: true })
       configManager.addRecentDatabase(dbPath) // This updates lastOpenedAt
+
+      // Register user as assignee
+      const userId = configManager.getUserId()
+      const lastUserName = configManager.getLastUserName()
+      db.registerUser(userId, lastUserName)
 
       // Start watcher and auto-archive
       startWatcher(dbPath)
@@ -293,6 +312,18 @@ export function setupIpcHandlers(context: IpcContext): void {
 
   ipcMain.handle('delete-assignee', (_, id: number) => {
     return withDatabase(db => db.deleteAssignee(id))
+  })
+
+  ipcMain.handle('register-user', (_, userId: string, defaultName?: string) => {
+    return withDatabase(db => db.registerUser(userId, defaultName))
+  })
+
+  ipcMain.handle('update-user-name', (_, userId: string, newName: string) => {
+    return withDatabase(db => db.updateUserName(userId, newName))
+  })
+
+  ipcMain.handle('get-assignee-by-user-id', (_, userId: string) => {
+    return withDatabase(db => db.getAssigneeByUserId(userId))
   })
 
   // ============ CARD STATUSES HANDLERS ============

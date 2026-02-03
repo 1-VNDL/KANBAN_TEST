@@ -70,6 +70,11 @@ async function initializeApp(): Promise<void> {
       databaseManager = new DatabaseManager(config.dbPath)
       databaseManager.initialize()
 
+      // Register user as assignee (auto-registration on startup)
+      const userId = configManager.getUserId()
+      const lastUserName = config.lastUserName
+      databaseManager.registerUser(userId, lastUserName)
+
       // Start file watcher
       databaseWatcher = new DatabaseWatcher(config.dbPath, () => {
         // Notify all windows about database change
